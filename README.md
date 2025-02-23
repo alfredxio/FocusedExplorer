@@ -2,6 +2,8 @@
 
 Focused Explorer is a Visual Studio Code extension that provides a dedicated file navigation pane where you can add frequently used files or directories. It lets you maintain a clean, merged hierarchical view by combining parent and child entries, while also offering the ability to hide specific subfolders or files.
 
+![image](https://github.com/user-attachments/assets/76a39670-7776-459e-a0ae-58b02e55f783)
+
 ## Overview
 
 The extension offers a new tree view—**Focused Explorer**—integrated into the VS Code sidebar. It allows you to:
@@ -26,3 +28,17 @@ Your selections are persisted across sessions using VS Code's workspace state, s
 
 - [Node.js](https://nodejs.org/en/download/) (v14 or later recommended)
 - [Visual Studio Code](https://code.visualstudio.com/)
+
+### Using the Focused Explorer
+
+**Add Items**  
+In the standard Explorer, right-click on any file or folder and select **"Add to Focused Explorer"**.
+
+**View Merged Hierarchy**  
+Open the **Focused Explorer** view in the sidebar. If you add a parent folder (e.g., `src`), it displays its entire hierarchy (including `src/assets`, etc.). If you add a child folder (e.g., `src/a`) after the parent, the extension ignores the duplicate and merges the hierarchy.
+
+**Remove/Hide Items**  
+In the Focused Explorer, right-click on an item and select **"Remove from Focused Explorer"**.
+
+- For **top-level items**, this removes the item entirely.  
+- For **sub-items**, the item is added to an exclusion list so it is hidden without affecting the parent folder's display.
