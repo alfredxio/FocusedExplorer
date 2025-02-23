@@ -23,11 +23,18 @@ export class FocusedExplorerDataProvider
   private excludedItems: Set<string> = new Set();
 
   constructor(private context: vscode.ExtensionContext) {
-    const savedFocused = context.workspaceState.get<string[]>('focusedExplorerItems', []);
-    this.focusedItems = new Set(savedFocused);
+    // Load data for the *current* workspace folder (if any).
+    const rootPath = this.getWorkspaceRoot();
+    if (rootPath) {
+      const focusedKey = `focusedExplorerItems-${rootPath}`;
+      const excludedKey = `focusedExplorerExcluded-${rootPath}`;
 
-    const savedExcluded = context.workspaceState.get<string[]>('focusedExplorerExcluded', []);
-    this.excludedItems = new Set(savedExcluded);
+      const savedFocused = context.workspaceState.get<string[]>(focusedKey, []);
+      this.focusedItems = new Set(savedFocused);
+
+      const savedExcluded = context.workspaceState.get<string[]>(excludedKey, []);
+      this.excludedItems = new Set(savedExcluded);
+    }
   }
 
   public getTreeItem(element: FocusedItem): vscode.TreeItem {
@@ -49,10 +56,10 @@ export class FocusedExplorerDataProvider
   }
 
   public async getChildren(element?: FocusedItem): Promise<FocusedItem[]> {
-    if (!vscode.workspace.workspaceFolders) {
+    const rootPath = this.getWorkspaceRoot();
+    if (!rootPath) {
       return [];
     }
-    const rootPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
 
     if (!element) {
       // Return top-level focused items (after filtering for duplicates)
@@ -144,10 +151,15 @@ export class FocusedExplorerDataProvider
    * Otherwise, the item is added to the exclusion list.
    */
   public remove(treeItem: vscode.TreeItem) {
-    if (!treeItem.resourceUri || !vscode.workspace.workspaceFolders) {
+    if (!treeItem.resourceUri) {
       return;
     }
-    const rootPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(treeItem.resourceUri);
+    if (!workspaceFolder) {
+      return;
+    }
+
+    const rootPath = workspaceFolder.uri.fsPath;
     const relPath = path.relative(rootPath, treeItem.resourceUri.fsPath);
 
     if (this.focusedItems.has(relPath)) {
@@ -188,11 +200,28 @@ export class FocusedExplorerDataProvider
 
   /**
    * Persists both focusedItems and excludedItems to workspaceState,
+   * under keys specific to the current workspace root,
    * then refreshes the tree view.
    */
   private persist() {
-    this.context.workspaceState.update('focusedExplorerItems', Array.from(this.focusedItems));
-    this.context.workspaceState.update('focusedExplorerExcluded', Array.from(this.excludedItems));
+    const rootPath = this.getWorkspaceRoot();
+    if (!rootPath) {
+      return;
+    }
+    const focusedKey = `focusedExplorerItems-${rootPath}`;
+    const excludedKey = `focusedExplorerExcluded-${rootPath}`;
+
+    this.context.workspaceState.update(focusedKey, Array.from(this.focusedItems));
+    this.context.workspaceState.update(excludedKey, Array.from(this.excludedItems));
+
     this._onDidChangeTreeData.fire();
+  }
+
+  /**
+   * Helper to return the first workspace root path (if any).
+   * Adjust this if you need multi-root handling.
+   */
+  private getWorkspaceRoot(): string | undefined {
+    return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   }
 }
