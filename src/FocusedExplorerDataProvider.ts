@@ -22,8 +22,9 @@ export class FocusedExplorerDataProvider
   /** Subpaths that the user wants hidden. */
   private excludedItems: Set<string> = new Set();
 
+  private fileWatcher: vscode.FileSystemWatcher | undefined;
+
   constructor(private context: vscode.ExtensionContext) {
-    // Load data for the *current* workspace folder (if any).
     const rootPath = this.getWorkspaceRoot();
     if (rootPath) {
       const focusedKey = `focusedExplorerItems-${rootPath}`;
@@ -35,6 +36,13 @@ export class FocusedExplorerDataProvider
       const savedExcluded = context.workspaceState.get<string[]>(excludedKey, []);
       this.excludedItems = new Set(savedExcluded);
     }
+
+    // Watch for file system changes to refresh the tree.
+    this.fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
+    this.fileWatcher.onDidCreate(() => this._onDidChangeTreeData.fire());
+    this.fileWatcher.onDidDelete(() => this._onDidChangeTreeData.fire());
+    this.fileWatcher.onDidChange(() => this._onDidChangeTreeData.fire());
+    this.context.subscriptions.push(this.fileWatcher);
   }
 
   public getTreeItem(element: FocusedItem): vscode.TreeItem {
@@ -42,15 +50,17 @@ export class FocusedExplorerDataProvider
     treeItem.resourceUri = element.resourceUri;
     treeItem.contextValue = 'focusedExplorerItem';
 
+    // Set the command so that clicking any item opens/reveals it in the Explorer.
+    treeItem.command = {
+      command: 'focusedExplorer.openAndReveal',
+      title: 'Open and Reveal',
+      arguments: [element.resourceUri]
+    };
+
     if (element.isDirectory) {
       treeItem.collapsibleState = vscode.TreeItemCollapsibleState.Collapsed;
     } else {
       treeItem.collapsibleState = vscode.TreeItemCollapsibleState.None;
-      treeItem.command = {
-        command: 'vscode.open',
-        title: 'Open File',
-        arguments: [element.resourceUri],
-      };
     }
     return treeItem;
   }
@@ -62,7 +72,6 @@ export class FocusedExplorerDataProvider
     }
 
     if (!element) {
-      // Return top-level focused items (after filtering for duplicates)
       const rootPaths = this.getRootPaths();
       const childrenPromises = rootPaths.map((rel) => this.createFocusedItemAsync(rootPath, rel));
       return Promise.all(childrenPromises);
@@ -89,9 +98,6 @@ export class FocusedExplorerDataProvider
     return [];
   }
 
-  /**
-   * Asynchronously creates a FocusedItem given a relative path.
-   */
   private async createFocusedItemAsync(workspaceRoot: string, rel: string): Promise<FocusedItem> {
     const fullPath = path.join(workspaceRoot, rel);
     let isDirectory = false;
@@ -99,7 +105,7 @@ export class FocusedExplorerDataProvider
       const stats = await fs.promises.stat(fullPath);
       isDirectory = stats.isDirectory();
     } catch {
-      // If error occurs (file may have been deleted), assume not a directory.
+      // If error occurs (file might have been deleted), assume not a directory.
     }
     return {
       label: path.basename(rel),
@@ -109,11 +115,6 @@ export class FocusedExplorerDataProvider
     };
   }
 
-  /**
-   * Adds a new path to the focused items.
-   * If a parent is already focused, the new path is ignored.
-   * If the new path is a parent of existing items, those items are removed.
-   */
   public add(uri: vscode.Uri) {
     const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
     if (!workspaceFolder) {
@@ -122,34 +123,23 @@ export class FocusedExplorerDataProvider
     const rootPath = workspaceFolder.uri.fsPath;
     const relPath = path.relative(rootPath, uri.fsPath);
 
-    // Check if relPath is already covered by an existing focused item.
     for (const existing of this.focusedItems) {
       if (relPath === existing || relPath.startsWith(existing + path.sep)) {
-        // Already covered; ignore.
         return;
       }
     }
 
-    // Remove any focused items that are children of the new path.
     for (const existing of Array.from(this.focusedItems)) {
       if (existing.startsWith(relPath + path.sep)) {
         this.focusedItems.delete(existing);
       }
     }
 
-    // Remove from excluded if present.
     this.excludedItems.delete(relPath);
-
-    // Add the new path.
     this.focusedItems.add(relPath);
     this.persist();
   }
 
-  /**
-   * Removes an item from the focused explorer.
-   * If the item is a top-level focused item, it is removed.
-   * Otherwise, the item is added to the exclusion list.
-   */
   public remove(treeItem: vscode.TreeItem) {
     if (!treeItem.resourceUri) {
       return;
@@ -158,7 +148,6 @@ export class FocusedExplorerDataProvider
     if (!workspaceFolder) {
       return;
     }
-
     const rootPath = workspaceFolder.uri.fsPath;
     const relPath = path.relative(rootPath, treeItem.resourceUri.fsPath);
 
@@ -170,11 +159,6 @@ export class FocusedExplorerDataProvider
     this.persist();
   }
 
-  /**
-   * Returns the set of top-level (minimal) focused paths.
-   * For example, if both "src" and "src/assets" were added,
-   * only "src" will be returned.
-   */
   private getRootPaths(): string[] {
     const all = Array.from(this.focusedItems);
     return all.filter((candidate) => {
@@ -182,10 +166,6 @@ export class FocusedExplorerDataProvider
     });
   }
 
-  /**
-   * Checks whether a given relative path is excluded,
-   * either directly or because it’s under an excluded path.
-   */
   private isExcluded(relPath: string): boolean {
     if (this.excludedItems.has(relPath)) {
       return true;
@@ -198,11 +178,6 @@ export class FocusedExplorerDataProvider
     return false;
   }
 
-  /**
-   * Persists both focusedItems and excludedItems to workspaceState,
-   * under keys specific to the current workspace root,
-   * then refreshes the tree view.
-   */
   private persist() {
     const rootPath = this.getWorkspaceRoot();
     if (!rootPath) {
@@ -217,10 +192,6 @@ export class FocusedExplorerDataProvider
     this._onDidChangeTreeData.fire();
   }
 
-  /**
-   * Helper to return the first workspace root path (if any).
-   * Adjust this if you need multi-root handling.
-   */
   private getWorkspaceRoot(): string | undefined {
     return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   }
