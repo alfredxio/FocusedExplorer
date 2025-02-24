@@ -3,6 +3,7 @@
 Focused Explorer is a Visual Studio Code extension that provides a dedicated file navigation pane where you can add frequently used files or directories. It lets you maintain a clean, merged hierarchical view by combining parent and child entries, while also offering the ability to hide specific subfolders or files.
 
 ![image](https://github.com/user-attachments/assets/76a39670-7776-459e-a0ae-58b02e55f783)
+![image](https://github.com/user-attachments/assets/cc37230d-ceca-4174-b9a4-2af9c5b01e3e)
 
 ## Overview
 
